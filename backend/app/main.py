@@ -35,6 +35,9 @@ app.add_middleware(
 )
 
 # 注册路由
+# auth.router 同时包含认证接口和项目接口
+# /api/auth/* - 认证接口 (login, register, me)
+# /api/* - 项目接口 (projects, scenes, equipments 等)
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(auth.router, prefix="/api", tags=["项目管理"])
 app.include_router(data_collection.router, prefix="/api", tags=["数据采集"])

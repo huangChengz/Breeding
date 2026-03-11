@@ -9,6 +9,42 @@ import type { OutlineNode, NodeReference, ReferenceType, DocGeneration } from '@
 import type { Scene, Equipment, AIModel } from '@/api/data_collection'
 import OutlineTreeNode from '@/components/OutlineTreeNode.vue'
 
+// 导出 Word
+const isExporting = ref(false)
+
+async function handleExportWord() {
+  isExporting.value = true
+  try {
+    const response = await outlineApi.exportWord(projectId.value)
+    const blob = new Blob([response.data as any], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    // 从响应头获取文件名
+    const contentDisposition = response.headers['content-disposition']
+    let filename = '申报书.docx'
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/)
+      if (filenameMatch) {
+        filename = filenameMatch[1]
+      }
+    }
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch (error) {
+    console.error('导出失败', error)
+    ElMessage.error('导出失败，请重试')
+  } finally {
+    isExporting.value = false
+  }
+}
+
 const route = useRoute()
 const projectId = computed(() => route.params.id as string)
 
@@ -34,6 +70,10 @@ const selectedRefType = ref<string>('core')
 // 生成历史
 const generations = ref<DocGeneration[]>([])
 const currentContent = ref('')
+const versionDrawerVisible = ref(false)
+const optimizeDrawerVisible = ref(false)
+const isOptimizing = ref(false)
+const selectedOptimizeType = ref('polish')
 
 // ============ 获取大纲树 ============
 async function fetchOutlineTree() {
@@ -57,24 +97,43 @@ async function fetchOutlineTree() {
 // ============ 选择节点 ============
 async function handleSelectNode(node: OutlineNode) {
   selectedNode.value = node
+  console.log('[handleSelectNode] Selecting node:', node.id, node.node_code, node.node_title)
 
   if (node.id) {
     try {
-      const [refsRes, gensRes, typesRes] = await Promise.all([
-        outlineApi.getReferences(node.id),
-        outlineApi.getGenerations(node.id),
-        outlineApi.getReferenceTypes()
-      ])
-      references.value = refsRes.data
+      // 先获取节点详情（获取最新内容）
+      const nodeRes = await outlineApi.getNode(node.id)
+      const latestNode = nodeRes.data
+      console.log('[handleSelectNode] latestNode content:', latestNode.content?.substring(0, 100) || '(empty)')
+
+      // 先获取生成历史，再决定使用哪个内容
+      const gensRes = await outlineApi.getGenerations(node.id)
       generations.value = gensRes.data
-      referenceTypes.value = typesRes.data
+      console.log('[handleSelectNode] generations count:', gensRes.data.length)
 
       const currentGen = gensRes.data.find((g: DocGeneration) => g.is_current_version)
       if (currentGen) {
+        console.log('[handleSelectNode] Using generation content')
         currentContent.value = currentGen.generation_content
       } else {
-        currentContent.value = node.content || ''
+        // 使用从 API 获取的最新内容
+        console.log('[handleSelectNode] Using node content:', latestNode.content?.substring(0, 100) || '(empty)')
+        currentContent.value = latestNode.content || ''
       }
+
+      // 同时加载引用、引用类型、以及场景/设备/模型数据
+      const [refsRes, typesRes, scenesRes, eqRes, modelsRes] = await Promise.all([
+        outlineApi.getReferences(node.id),
+        outlineApi.getReferenceTypes(),
+        sceneApi.list(projectId.value),
+        equipmentApi.list(projectId.value),
+        aiModelApi.list(projectId.value)
+      ])
+      references.value = refsRes.data
+      referenceTypes.value = typesRes.data
+      scenes.value = scenesRes.data
+      equipments.value = eqRes.data
+      aiModels.value = modelsRes.data
     } catch (error) {
       console.error('获取节点数据失败', error)
     }
@@ -104,10 +163,17 @@ async function openReferenceDrawer() {
 
 // ============ 添加引用 ============
 async function addReference(entityType: string, entityId: string, entityName: string) {
-  if (!selectedNode.value) return
+  if (!selectedNode.value) {
+    ElMessage.warning('请先选择一个节点')
+    return
+  }
 
   const refType = referenceTypes.value.find(t => t.type_code === selectedRefType.value)
-  if (!refType) return
+  if (!refType) {
+    console.error('Reference type not found', { referenceTypes: referenceTypes.value, selectedRefType: selectedRefType.value })
+    ElMessage.error('引用类型未找到，请刷新页面后重试')
+    return
+  }
 
   try {
     await outlineApi.createReference(selectedNode.value.id, {
@@ -144,12 +210,19 @@ async function deleteReference(refId: string) {
 async function saveContent() {
   if (!selectedNode.value) return
 
+  console.log('[saveContent] Saving to node:', selectedNode.value.id, selectedNode.value.node_code, selectedNode.value.node_title)
+  console.log('[saveContent] Content length:', currentContent.value.length)
+  console.log('[saveContent] Content preview:', currentContent.value.substring(0, 50))
+
   try {
-    await outlineApi.updateNode(selectedNode.value.id, {
+    // 使用 PATCH 更新节点内容
+    const res = await outlineApi.saveContent(selectedNode.value.id, {
       content: currentContent.value
     })
+    console.log('[saveContent] Save response:', res.data)
     ElMessage.success('保存成功')
   } catch (error) {
+    console.error('[saveContent] Error:', error)
     ElMessage.error('保存失败')
   }
 }
@@ -265,6 +338,80 @@ function getRefTypeTag(typeCode: string): string {
   }
   return map[typeCode] || 'info'
 }
+
+// ============ 版本历史 ============
+function openVersionDrawer() {
+  versionDrawerVisible.value = true
+}
+
+async function switchToVersion(generation: DocGeneration) {
+  if (!selectedNode.value) return
+
+  try {
+    await docAgentApi.setCurrentVersion(selectedNode.value.id, generation.id)
+    currentContent.value = generation.generation_content
+    versionDrawerVisible.value = false
+    ElMessage.success('已切换到该版本')
+
+    // 刷新历史记录
+    const { data } = await outlineApi.getGenerations(selectedNode.value.id)
+    generations.value = data
+  } catch (error) {
+    ElMessage.error('切换版本失败')
+  }
+}
+
+// ============ 内容优化 ============
+function openOptimizeDrawer() {
+  optimizeDrawerVisible.value = true
+  selectedOptimizeType.value = 'polish'
+}
+
+async function optimizeContent() {
+  if (!selectedNode.value || !currentContent.value) {
+    ElMessage.warning('请先选择节点或填写内容')
+    return
+  }
+
+  isOptimizing.value = true
+  try {
+    console.log('[Optimize] Starting optimization:', {
+      nodeId: selectedNode.value.id,
+      contentLength: currentContent.value.length,
+      optimizeType: selectedOptimizeType.value
+    })
+
+    const { data } = await docAgentApi.optimize(
+      selectedNode.value.id,
+      currentContent.value,
+      selectedOptimizeType.value
+    )
+    console.log('[Optimize] Success:', data)
+    currentContent.value = data.content
+    optimizeDrawerVisible.value = false
+    ElMessage.success('内容优化完成')
+
+    // 刷新历史记录
+    const { data: gens } = await outlineApi.getGenerations(selectedNode.value.id)
+    generations.value = gens
+  } catch (error: any) {
+    console.error('[Optimize] Error:', error)
+    ElMessage.error(error?.response?.data?.detail || '优化失败，请重试')
+  } finally {
+    isOptimizing.value = false
+  }
+}
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 </script>
 
 <template>
@@ -274,6 +421,16 @@ function getRefTypeTag(typeCode: string): string {
       <div class="hero-content">
         <h1 class="hero-title">项目大纲</h1>
         <p class="hero-subtitle">构建智能育种申报书体系</p>
+      </div>
+      <div class="hero-actions">
+        <el-button
+          type="success"
+          :loading="isExporting"
+          @click="handleExportWord"
+        >
+          <el-icon><Download /></el-icon>
+          {{ isExporting ? '导出中' : '导出Word' }}
+        </el-button>
       </div>
       <div class="hero-decoration">
         <div class="deco-line"></div>
@@ -321,6 +478,14 @@ function getRefTypeTag(typeCode: string): string {
               <el-button @click="openReferenceDrawer">
                 <el-icon><Link /></el-icon>
                 引用管理
+              </el-button>
+              <el-button @click="openVersionDrawer" :disabled="generations.length === 0">
+                <el-icon><Clock /></el-icon>
+                版本历史
+              </el-button>
+              <el-button @click="openOptimizeDrawer" :disabled="!currentContent">
+                <el-icon><EditPen /></el-icon>
+                内容优化
               </el-button>
               <el-button type="primary" :disabled="isGenerating" :loading="isGenerating" @click="generateContent">
                 <el-icon><MagicStick /></el-icon>
@@ -455,6 +620,89 @@ function getRefTypeTag(typeCode: string): string {
         </el-tabs>
       </div>
     </el-drawer>
+
+    <!-- 版本历史抽屉 -->
+    <el-drawer v-model="versionDrawerVisible" title="版本历史" direction="ltr" size="380px">
+      <div class="version-drawer-body">
+        <div class="version-list">
+          <div
+            v-for="gen in generations"
+            :key="gen.id"
+            class="version-card"
+            :class="{ 'is-current': gen.is_current_version }"
+          >
+            <div class="version-header">
+              <div class="version-info">
+                <span class="version-badge" v-if="gen.is_current_version">当前版本</span>
+                <span class="version-source">{{ gen.generation_source === 'ai' ? 'AI生成' : gen.generation_source === 'ai_optimize' ? 'AI优化' : '手动编辑' }}</span>
+              </div>
+              <span class="version-date">{{ formatDate(gen.created_at) }}</span>
+            </div>
+            <div class="version-preview">
+              {{ gen.generation_content?.slice(0, 100) }}...
+            </div>
+            <div class="version-actions">
+              <el-button size="small" type="primary" v-if="!gen.is_current_version" @click="switchToVersion(gen)">
+                切换到此版本
+              </el-button>
+              <el-button size="small" v-else disabled>
+                当前使用中
+              </el-button>
+            </div>
+          </div>
+          <el-empty v-if="!generations.length" description="暂无版本历史" :image-size="60" />
+        </div>
+      </div>
+    </el-drawer>
+
+    <!-- 内容优化抽屉 -->
+    <el-drawer v-model="optimizeDrawerVisible" title="内容优化" direction="btt" size="320px">
+      <div class="optimize-drawer-body">
+        <div class="optimize-options">
+          <h4>选择优化类型</h4>
+          <el-radio-group v-model="selectedOptimizeType" class="optimize-types">
+            <el-radio-button value="polish">
+              <div class="opt-btn">
+                <el-icon><EditPen /></el-icon>
+                <span>润色</span>
+              </div>
+            </el-radio-button>
+            <el-radio-button value="expand">
+              <div class="opt-btn">
+                <el-icon><Plus /></el-icon>
+                <span>扩展</span>
+              </div>
+            </el-radio-button>
+            <el-radio-button value="shorten">
+              <div class="opt-btn">
+                <el-icon><Minus /></el-icon>
+                <span>精简</span>
+              </div>
+            </el-radio-button>
+            <el-radio-button value="formal">
+              <div class="opt-btn">
+                <el-icon><Document /></el-icon>
+                <span>正式</span>
+              </div>
+            </el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <div class="optimize-desc">
+          <p v-if="selectedOptimizeType === 'polish'">润色：优化语言表达，使内容更加流畅、专业</p>
+          <p v-else-if="selectedOptimizeType === 'expand'">扩展：增加更多细节和说明，丰富内容</p>
+          <p v-else-if="selectedOptimizeType === 'shorten'">精简：去除冗余内容，保留核心信息</p>
+          <p v-else-if="selectedOptimizeType === 'formal'">正式：改写为更正式、专业的学术风格</p>
+        </div>
+
+        <div class="optimize-actions">
+          <el-button @click="optimizeDrawerVisible = false">取消</el-button>
+          <el-button type="primary" :loading="isOptimizing" @click="optimizeContent">
+            {{ isOptimizing ? '优化中...' : '开始优化' }}
+          </el-button>
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -491,6 +739,14 @@ function getRefTypeTag(typeCode: string): string {
 .hero-subtitle {
   font-size: 14px;
   color: var(--color-text-tertiary);
+}
+
+.hero-actions {
+  position: absolute;
+  right: 200px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
 }
 
 .hero-decoration {
@@ -850,5 +1106,123 @@ function getRefTypeTag(typeCode: string): string {
 .ref-card:hover .ref-card-add {
   opacity: 1;
   color: var(--color-accent);
+}
+
+/* 版本历史抽屉 */
+.version-drawer-body {
+  padding: var(--space-lg);
+}
+
+.version-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.version-card {
+  padding: var(--space-md);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.version-card.is-current {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.version-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-sm);
+}
+
+.version-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.version-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  background: var(--color-accent);
+  color: white;
+  border-radius: var(--radius-sm);
+}
+
+.version-source {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.version-date {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.version-preview {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin-bottom: var(--space-sm);
+}
+
+.version-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 内容优化抽屉 */
+.optimize-drawer-body {
+  padding: var(--space-xl);
+}
+
+.optimize-options {
+  margin-bottom: var(--space-lg);
+}
+
+.optimize-options h4 {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-md);
+}
+
+.optimize-types {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.optimize-types :deep(.el-radio-button__inner) {
+  padding: var(--space-md) var(--space-lg);
+}
+
+.opt-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.optimize-desc {
+  padding: var(--space-md);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-xl);
+}
+
+.optimize-desc p {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.optimize-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
 }
 </style>

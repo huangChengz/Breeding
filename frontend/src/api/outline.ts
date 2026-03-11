@@ -79,6 +79,10 @@ export const outlineApi = {
   updateNode: (nodeId: string, data: Partial<OutlineNode>) =>
     axios.patch<OutlineNode>(`/outline/${nodeId}`, data),
 
+  // 保存内容（使用 PATCH 端点）
+  saveContent: (nodeId: string, data: { content: string }) =>
+    axios.patch(`/outline/${nodeId}`, data),
+
   // 初始化大纲
   initializeOutline: (projectId: string) =>
     axios.post(`/projects/${projectId}/outline/initialize`),
@@ -105,5 +109,11 @@ export const outlineApi = {
 
   // 创建生成记录
   createGeneration: (nodeId: string, data: Partial<DocGeneration>) =>
-    axios.post<DocGeneration>(`/outline/${nodeId}/generations`, data)
+    axios.post<DocGeneration>(`/outline/${nodeId}/generations`, data),
+
+  // 导出 Word 文档
+  exportWord: (projectId: string) =>
+    axios.get(`/projects/${projectId}/export-word`, {
+      responseType: 'blob'
+    })
 }

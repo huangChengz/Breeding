@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Edit, Delete, FolderOpened, Document, Check, Clock, Loading } from '@element-plus/icons-vue'
 import { projectApi } from '@/api'
 import type { Project } from '@/types'
 
@@ -32,7 +33,15 @@ const statusTypeMap: Record<number, string> = {
   1: 'warning',
   2: 'primary',
   3: 'success',
-  4: 'info'
+  4: ''
+}
+
+const statusIconMap: Record<number, any> = {
+  0: Edit,
+  1: Clock,
+  2: Loading,
+  3: Check,
+  4: FolderOpened
 }
 
 async function fetchProjects() {
@@ -79,6 +88,12 @@ async function handleDelete(id: string) {
   }
 }
 
+function formatDate(dateStr: string | undefined) {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
 onMounted(() => {
   fetchProjects()
 })
@@ -92,7 +107,7 @@ onMounted(() => {
         <h1 class="page-title">项目管理</h1>
         <p class="page-subtitle">管理您的AI育种项目申报书</p>
       </div>
-      <el-button type="primary" size="large" @click="dialogVisible = true">
+      <el-button type="primary" size="large" class="create-btn" @click="dialogVisible = true">
         <el-icon><Plus /></el-icon>
         新建项目
       </el-button>
@@ -104,30 +119,54 @@ onMounted(() => {
         v-for="project in projects"
         :key="project.id"
         class="project-card"
-        @click="handleView(project.id)"
+        :class="{ 'is-draft': project.status === 0 }"
       >
-        <div class="card-header">
-          <span class="project-code">{{ project.project_code || 'PROJECT' }}</span>
-          <el-tag :type="statusTypeMap[project.status] as any" size="small">
-            {{ statusMap[project.status] }}
-          </el-tag>
+        <!-- 卡片封面 -->
+        <div class="card-cover" @click="handleView(project.id)">
+          <div class="cover-icon">
+            <el-icon v-if="project.status === 0"><Edit /></el-icon>
+            <el-icon v-else-if="project.status === 1"><Document /></el-icon>
+            <el-icon v-else-if="project.status === 2"><Loading class="rotating" /></el-icon>
+            <el-icon v-else-if="project.status === 3"><Check /></el-icon>
+            <el-icon v-else><FolderOpened /></el-icon>
+          </div>
         </div>
-        <h3 class="project-name">{{ project.project_name }}</h3>
-        <p class="project-desc">{{ project.description || '暂无描述' }}</p>
-        <div class="card-meta">
-          <span class="meta-item" v-if="project.owner_unit">
-            <el-icon><OfficeBuilding /></el-icon>
-            {{ project.owner_unit }}
-          </span>
-          <span class="meta-item" v-if="project.construction_period_months">
-            <el-icon><Calendar /></el-icon>
-            {{ project.construction_period_months }}个月
-          </span>
-        </div>
-        <div class="card-actions" @click.stop>
-          <el-button text type="danger" @click="handleDelete(project.id)">
-            <el-icon><Delete /></el-icon>
-          </el-button>
+
+        <!-- 卡片内容 -->
+        <div class="card-body" @click="handleView(project.id)">
+          <div class="card-header">
+            <span class="project-code">{{ project.project_code || 'PROJECT' }}</span>
+            <el-tag :type="statusTypeMap[project.status] as any" size="small" class="status-tag">
+              <el-icon v-if="statusIconMap[project.status]" class="status-icon">
+                <component :is="statusIconMap[project.status]" />
+              </el-icon>
+              {{ statusMap[project.status] }}
+            </el-tag>
+          </div>
+
+          <h3 class="project-name">{{ project.project_name }}</h3>
+          <p class="project-desc">{{ project.description || '暂无描述' }}</p>
+
+          <div class="card-meta">
+            <span class="meta-item" v-if="project.owner_unit">
+              <el-icon><OfficeBuilding /></el-icon>
+              {{ project.owner_unit }}
+            </span>
+            <span class="meta-item" v-if="project.construction_period_months">
+              <el-icon><Calendar /></el-icon>
+              {{ project.construction_period_months }}个月
+            </span>
+          </div>
+
+          <div class="card-footer">
+            <span class="create-time" v-if="project.created_at">
+              创建于 {{ formatDate(project.created_at) }}
+            </span>
+            <el-button text type="danger" size="small" class="delete-btn" @click.stop="handleDelete(project.id)">
+              <el-icon><Delete /></el-icon>
+              删除
+            </el-button>
+          </div>
         </div>
       </div>
 
@@ -143,12 +182,13 @@ onMounted(() => {
             <path d="M150 160 L158 168 L172 152" fill="none" stroke="currentColor" stroke-width="2" opacity="0.3"/>
           </svg>
         </div>
-        <p>暂无项目，点击上方按钮创建</p>
+        <p class="empty-text">暂无项目，点击上方按钮创建</p>
+        <el-button type="primary" @click="dialogVisible = true">创建第一个项目</el-button>
       </div>
     </div>
 
     <!-- 创建对话框 -->
-    <el-dialog v-model="dialogVisible" title="新建项目" width="520px" :close-on-click-modal="false">
+    <el-dialog v-model="dialogVisible" title="新建项目" width="520px" :close-on-click-modal="false" class="create-dialog">
       <el-form :model="form" label-position="top" class="project-form">
         <el-form-item label="项目名称" required>
           <el-input v-model="form.project_name" placeholder="请输入项目名称" />
@@ -213,34 +253,107 @@ onMounted(() => {
   color: var(--color-text-tertiary);
 }
 
+.create-btn {
+  height: 44px;
+  padding: 0 24px;
+  font-weight: 500;
+}
+
 /* 项目卡片网格 */
 .projects-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: var(--space-lg);
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-xl);
+}
+
+@media (max-width: 1200px) {
+  .projects-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .projects-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .project-card {
-  position: relative;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-lg);
-  cursor: pointer;
-  transition: all 0.25s ease;
+  border-radius: 16px;
+  overflow: hidden;
+  transition: all 0.3s ease;
 }
 
 .project-card:hover {
   border-color: var(--color-accent);
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(37, 99, 235, 0.12);
+  transform: translateY(-4px);
+}
+
+.project-card.is-draft {
+  background: linear-gradient(135deg, var(--color-bg-card) 0%, #f8fafc 100%);
+}
+
+/* 卡片封面 - 不同颜色 */
+.card-cover {
+  height: 72px;
+  background: linear-gradient(135deg, var(--color-accent) 0%, #3b82f6 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.project-card:nth-child(2) .card-cover,
+.project-card:nth-child(5) .card-cover {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.project-card:nth-child(3) .card-cover,
+.project-card:nth-child(6) .card-cover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.project-card:nth-child(4) .card-cover {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.card-cover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.08'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+.cover-icon {
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(8px);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 22px;
+  position: relative;
+  z-index: 1;
+}
+
+/* 卡片内容 */
+.card-body {
+  padding: var(--space-md);
+  cursor: pointer;
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--space-sm);
 }
 
 .project-code {
@@ -252,12 +365,22 @@ onMounted(() => {
   text-transform: uppercase;
 }
 
+.status-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-icon {
+  font-size: 12px;
+}
+
 .project-name {
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin-bottom: var(--space-sm);
+  margin-bottom: var(--space-xs);
   line-height: 1.4;
 }
 
@@ -274,9 +397,9 @@ onMounted(() => {
 
 .card-meta {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-md);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--color-border-light);
+  margin-bottom: var(--space-md);
 }
 
 .meta-item {
@@ -287,16 +410,40 @@ onMounted(() => {
   color: var(--color-text-tertiary);
 }
 
-.card-actions {
-  position: absolute;
-  top: var(--space-md);
-  right: var(--space-md);
+.meta-item .el-icon {
+  font-size: 14px;
+  color: var(--color-accent);
+}
+
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.create-time {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.delete-btn {
   opacity: 0;
   transition: opacity 0.2s;
 }
 
-.project-card:hover .card-actions {
+.project-card:hover .delete-btn {
   opacity: 1;
+}
+
+.rotating {
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* 空状态 */
@@ -306,14 +453,16 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-3xl);
-  color: var(--color-text-tertiary);
+  padding: 80px var(--space-3xl);
+  background: var(--color-bg-card);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-xl);
 }
 
 .empty-illustration {
-  width: 140px;
-  height: 140px;
-  margin-bottom: var(--space-lg);
+  width: 160px;
+  height: 160px;
+  margin-bottom: var(--space-xl);
 }
 
 .empty-svg {
@@ -321,8 +470,24 @@ onMounted(() => {
   height: 100%;
 }
 
+.empty-text {
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-xl);
+}
+
 /* 表单样式 */
 .project-form :deep(.el-form-item__label) {
   font-weight: 500;
+}
+
+.create-dialog :deep(.el-dialog__header) {
+  border-bottom: 1px solid var(--color-border-light);
+  padding-bottom: var(--space-md);
+}
+
+.create-dialog :deep(.el-dialog__footer) {
+  border-top: 1px solid var(--color-border-light);
+  padding-top: var(--space-md);
 }
 </style>

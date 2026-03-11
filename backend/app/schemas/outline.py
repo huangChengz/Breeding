@@ -47,8 +47,9 @@ class OutlineNodeResponse(OutlineNodeBase):
 class NodeReferenceBase(BaseModel):
     ref_entity_type: str
     ref_entity_id: UUID
-    ref_type_id: UUID
+    ref_type_id: Optional[UUID] = None
     reference_note: Optional[str] = None
+    is_active: bool = True
 
 
 class NodeReferenceCreate(NodeReferenceBase):

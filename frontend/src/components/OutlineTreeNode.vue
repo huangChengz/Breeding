@@ -21,7 +21,7 @@ const emit = defineEmits<{
   select: [node: OutlineNode]
 }>()
 
-const expanded = ref(true)
+const expanded = ref(false)
 
 const isSelected = computed(() => props.selectedId === props.node.id)
 const hasChildren = computed(() => props.node.children && props.node.children.length > 0)

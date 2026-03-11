@@ -10,6 +10,7 @@ export interface Scene {
   scene_name: string
   scene_description?: string
   research_output_type?: string
+  research_output_data?: string
   data_output_type?: string
   data_total_tb?: number
   file_size_description?: string
@@ -30,11 +31,19 @@ export interface Equipment {
   total_price: number
   supplier?: string
   is_imported: boolean
+  need_quote_seal: boolean
   origin_country?: string
-  necessity_description?: string
+  supplier_1?: string
+  supplier_2?: string
+  supplier_3?: string
+  final_supplier?: string
   plan_usage_value?: number
   plan_usage_unit?: string
   plan_usage_description?: string
+  necessity_description?: string
+  purchase_time?: string
+  commissioning_time?: string
+  data_output_type?: string
   created_at: string
 }
 
@@ -72,7 +81,8 @@ export interface AIModel {
   function_type?: string
   related_data_ids: string[]
   scene_ids: string[]
-  estimated_total_fee: number
+  source_equipment_ids: string[]
+  estimated_total_fee?: number
   created_at: string
 }
 

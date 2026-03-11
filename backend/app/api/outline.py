@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, cast, Integer
+from sqlalchemy import select, cast, Integer, text
 from sqlalchemy.orm import selectinload
 from typing import List
 from datetime import datetime
@@ -24,14 +25,32 @@ from app.models.data_collection import Scene, Equipment, Dataset, AIModel, RDPro
 router = APIRouter()
 
 
+# ============ 数据库修复 ============
+
+@router.post("/fix-db-constraint")
+async def fix_db_constraint(
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """修复数据库约束（允许 ref_type_id 为空）"""
+    try:
+        await db.execute(text("ALTER TABLE node_references ALTER COLUMN ref_type_id DROP NOT NULL"))
+        await db.commit()
+        return {"message": "数据库约束已修复"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ============ 大纲节点 ============
 
 def sort_key(code: str):
-    """提取编码第一部分作为排序键"""
+    """将编码转换为可排序的元组"""
     try:
-        return int(code.split('.')[0])
+        parts = code.split('.')
+        # 将每个部分转换为整数，如果无法转换则置为0
+        return tuple(int(p) if p.isdigit() else 0 for p in parts)
     except:
-        return 0
+        return (0,)
 
 
 @router.get("/projects/{project_id}/outline", response_model=List[OutlineNodeResponse])
@@ -141,11 +160,38 @@ async def get_outline_node(
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """获取大纲节点详情"""
-    result = await db.execute(select(OutlineNode).where(OutlineNode.id == node_id))
-    node = result.scalar_one_or_none()
-    if not node:
-        raise HTTPException(status_code=404, detail="节点不存在")
-    return node
+    try:
+        print(f"[get_outline_node] node_id={node_id}")
+        result = await db.execute(select(OutlineNode).where(OutlineNode.id == node_id))
+        node = result.scalar_one_or_none()
+        if not node:
+            raise HTTPException(status_code=404, detail="节点不存在")
+
+        # 构建响应对象
+        response = OutlineNodeResponse(
+            id=node.id,
+            project_id=node.project_id,
+            parent_id=node.parent_id,
+            node_code=node.node_code,
+            node_title=node.node_title,
+            node_level=node.node_level,
+            species_ids=node.species_ids or [],
+            content=node.content,
+            is_leaf=node.is_leaf,
+            sort_order=node.sort_order,
+            is_locked=node.is_locked,
+            is_expanded=node.is_expanded,
+            created_at=node.created_at,
+            updated_at=node.updated_at,
+            children=[]
+        )
+        print(f"[get_outline_node] node_code={node.node_code}, content={node.content[:50] if node.content else 'None'}")
+        return response
+    except Exception as e:
+        import traceback
+        print(f"[get_outline_node] ERROR: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.patch("/outline/{node_id}")
@@ -156,16 +202,21 @@ async def update_outline_node(
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """更新大纲节点"""
+    print(f"[update_outline_node] node_id={node_id}, data={data.model_dump()}")
     result = await db.execute(select(OutlineNode).where(OutlineNode.id == node_id))
     node = result.scalar_one_or_none()
     if not node:
         raise HTTPException(status_code=404, detail="节点不存在")
+
+    print(f"[update_outline_node] node_code={node.node_code}, node_title={node.node_title}, current_content={node.content[:50] if node.content else 'None'}")
 
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(node, key, value)
 
     await db.commit()
     await db.refresh(node)
+
+    print(f"[update_outline_node] after update, content={node.content[:50] if node.content else 'None'}")
 
     # 返回简化数据，避免关系加载问题
     return {
@@ -179,6 +230,37 @@ async def update_outline_node(
         "is_leaf": node.is_leaf,
         "sort_order": node.sort_order,
         "created_at": node.created_at,
+        "updated_at": node.updated_at
+    }
+
+
+# ============ 内容保存 ============
+
+class ContentSaveRequest(BaseModel):
+    content: str
+
+
+@router.post("/outline/{node_id}/save-content")
+async def save_node_content(
+    node_id: uuid.UUID,
+    data: ContentSaveRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """保存大纲节点内容"""
+    result = await db.execute(select(OutlineNode).where(OutlineNode.id == node_id))
+    node = result.scalar_one_or_none()
+    if not node:
+        raise HTTPException(status_code=404, detail="节点不存在")
+
+    # 更新节点内容
+    node.content = data.content
+    await db.commit()
+    await db.refresh(node)
+
+    return {
+        "id": node.id,
+        "content": node.content,
         "updated_at": node.updated_at
     }
 
@@ -339,23 +421,47 @@ async def initialize_outline(
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """初始化项目大纲（基于预设模板）"""
-    # 检查是否已有大纲
+    # 检查是否已有大纲（不检查软删除的）
     existing = await db.execute(
-        select(OutlineNode).where(OutlineNode.project_id == project_id)
+        select(OutlineNode).where(
+            OutlineNode.project_id == project_id,
+            OutlineNode.deleted_at.is_(None)
+        )
     )
     existing_node = existing.scalars().first()
     if existing_node and not force:
         return {"message": "项目已有大纲"}
 
-    # 如果force为true，删除现有大纲
-    if force and existing_node:
+    # 如果force为true，删除现有大纲（硬删除以避免唯一约束冲突）
+    if force:
         from datetime import datetime
+        # 先获取所有节点
         result = await db.execute(
             select(OutlineNode).where(OutlineNode.project_id == project_id)
         )
         nodes = result.scalars().all()
+        node_ids = [node.id for node in nodes]
+
+        # 先删除关联的doc_generations记录
+        if node_ids:
+            doc_gen_result = await db.execute(
+                select(DocGeneration).where(DocGeneration.node_id.in_(node_ids))
+            )
+            doc_gens = doc_gen_result.scalars().all()
+            for doc_gen in doc_gens:
+                await db.delete(doc_gen)
+
+            # 删除关联的node_references记录
+            ref_result = await db.execute(
+                select(NodeReference).where(NodeReference.node_id.in_(node_ids))
+            )
+            refs = ref_result.scalars().all()
+            for ref in refs:
+                await db.delete(ref)
+
+        # 再删除大纲节点
         for node in nodes:
-            node.deleted_at = datetime.utcnow()
+            await db.delete(node)
         await db.commit()
 
     # 完整的大纲结构（基于CLAUDE.md）- 核心章节
@@ -875,5 +981,77 @@ async def delete_outline(
     return {"message": "大纲已删除"}
 
 
+# ============ Word 导出 ============
+
+from fastapi.responses import StreamingResponse
+from app.utils.doc_exporter import export_outline_to_doc
+
+
+@router.get("/projects/{project_id}/export-word")
+async def export_word(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """导出项目大纲为 Word 文档"""
+    # 获取项目所有大纲节点（扁平化）
+    result = await db.execute(
+        select(OutlineNode)
+        .where(
+            OutlineNode.project_id == project_id,
+            OutlineNode.deleted_at.is_(None)
+        )
+    )
+    all_nodes = result.scalars().all()
+
+    if not all_nodes:
+        raise HTTPException(status_code=404, detail="项目没有大纲数据")
+
+    # 构建节点映射（使用字符串作为key）
+    node_map = {str(node.id): {
+        'id': str(node.id),
+        'project_id': str(node.project_id),
+        'parent_id': str(node.parent_id) if node.parent_id else None,
+        'node_code': node.node_code,
+        'node_title': node.node_title,
+        'node_level': node.node_level,
+        'content': node.content or '',
+        'children': []
+    } for node in all_nodes}
+
+    # 构建树结构
+    root_nodes = []
+    for node_id, node_data in node_map.items():
+        parent_id = node_data['parent_id']
+        if parent_id and parent_id in node_map:
+            node_map[parent_id]['children'].append(node_data)
+        elif parent_id is None:
+            root_nodes.append(node_data)
+
+    # 排序子节点
+    def sort_children(nodes: list):
+        nodes.sort(key=lambda n: sort_key(n['node_code']))
+        for node in nodes:
+            if node['children']:
+                sort_children(node['children'])
+
+    sort_children(root_nodes)
+
+    # 生成 Word 文档
+    doc_bytes = export_outline_to_doc(root_nodes)
+
+    # 使用 ASCII 文件名避免编码问题
+    filename = "project_outline.docx"
+
+    return StreamingResponse(
+        io.BytesIO(doc_bytes),
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"'
+        }
+    )
+
+
 # 修复导入
 from sqlalchemy import update
+import io

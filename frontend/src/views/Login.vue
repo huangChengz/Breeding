@@ -112,7 +112,7 @@ async function handleLogin() {
       </div>
 
       <div class="brand-footer">
-        <p>© 2024 AI育种项目申报系统</p>
+        <p>© 2026 AI育种项目申报系统</p>
       </div>
     </div>
 

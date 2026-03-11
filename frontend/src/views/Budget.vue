@@ -243,14 +243,14 @@ onMounted(() => {
           <el-table-column prop="data_name" label="数据名称" min-width="180" />
           <el-table-column prop="data_type" label="数据类型" width="100" />
           <el-table-column prop="data_total_tb" label="数据总量(TB)" width="120" />
-          <el-table-column prop="processing_fee" label="处理费(万元)" width="120">
+          <el-table-column prop="processing_fee" label="处理费(元)" width="120">
             <template #default="{ row }">
-              {{ formatMoney(row.processing_fee * 10000) }}
+              {{ formatMoney(row.processing_fee) }}
             </template>
           </el-table-column>
-          <el-table-column prop="purchase_fee" label="购买费(万元)" width="120">
+          <el-table-column prop="purchase_fee" label="购买费(元)" width="120">
             <template #default="{ row }">
-              {{ formatMoney(row.purchase_fee * 10000) }}
+              {{ formatMoney(row.purchase_fee) }}
             </template>
           </el-table-column>
           <el-table-column prop="need_purchase" label="是否购买" width="80">
@@ -261,7 +261,7 @@ onMounted(() => {
         </el-table>
         <div class="table-footer">
           <span>数据总计：</span>
-          <strong>{{ formatMoney(((summary?.data_processing_budget || 0) + (summary?.data_purchase_budget || 0)) * 10000) }}</strong>
+          <strong>{{ formatMoney(((summary?.data_processing_budget || 0) + (summary?.data_purchase_budget || 0))) }}</strong>
         </div>
       </el-tab-pane>
 
@@ -278,13 +278,13 @@ onMounted(() => {
           </el-table-column>
           <el-table-column prop="estimated_total_fee" label="预计费用(万元)" width="140">
             <template #default="{ row }">
-              {{ formatMoney(row.estimated_total_fee * 10000) }}
+              {{ formatMoney(row.estimated_total_fee) }}
             </template>
           </el-table-column>
         </el-table>
         <div class="table-footer">
           <span>AI模型总计：</span>
-          <strong>{{ formatMoney((summary?.ai_model_budget || 0) * 10000) }}</strong>
+          <strong>{{ formatMoney(summary?.ai_model_budget || 0) }}</strong>
         </div>
       </el-tab-pane>
 
@@ -296,13 +296,13 @@ onMounted(() => {
           <el-table-column prop="expected_output" label="预期成果" min-width="150" show-overflow-tooltip />
           <el-table-column prop="estimated_fee" label="预估费用(万元)" width="140">
             <template #default="{ row }">
-              {{ formatMoney(row.estimated_fee * 10000) }}
+              {{ formatMoney(row.estimated_fee) }}
             </template>
           </el-table-column>
         </el-table>
         <div class="table-footer">
           <span>研发项目总计：</span>
-          <strong>{{ formatMoney((summary?.rd_budget || 0) * 10000) }}</strong>
+          <strong>{{ formatMoney(summary?.rd_budget || 0) }}</strong>
         </div>
       </el-tab-pane>
     </el-tabs>

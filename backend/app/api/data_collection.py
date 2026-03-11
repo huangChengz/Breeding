@@ -196,7 +196,22 @@ async def create_equipment(
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """创建设备"""
-    equipment = Equipment(**data.model_dump(), project_id=project_id, created_by=current_user.id)
+    from datetime import date as date_type
+
+    # Convert string to date for date fields
+    equipment_data = data.model_dump()
+    if equipment_data.get('purchase_time') and isinstance(equipment_data['purchase_time'], str):
+        try:
+            equipment_data['purchase_time'] = datetime.strptime(equipment_data['purchase_time'], '%Y-%m-%d').date()
+        except:
+            equipment_data['purchase_time'] = None
+    if equipment_data.get('commissioning_time') and isinstance(equipment_data['commissioning_time'], str):
+        try:
+            equipment_data['commissioning_time'] = datetime.strptime(equipment_data['commissioning_time'], '%Y-%m-%d').date()
+        except:
+            equipment_data['commissioning_time'] = None
+
+    equipment = Equipment(**equipment_data, project_id=project_id, created_by=current_user.id)
     db.add(equipment)
     await db.commit()
     await db.refresh(equipment)
@@ -231,6 +246,12 @@ async def update_equipment(
         raise HTTPException(status_code=404, detail="设备不存在")
 
     for key, value in data.model_dump(exclude_unset=True).items():
+        # Convert string to date for date fields
+        if key in ('purchase_time', 'commissioning_time') and isinstance(value, str):
+            try:
+                value = datetime.strptime(value, '%Y-%m-%d').date()
+            except:
+                value = None
         setattr(equipment, key, value)
 
     await db.commit()

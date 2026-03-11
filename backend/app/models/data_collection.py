@@ -34,7 +34,8 @@ class Scene(Base):
     species_id = Column(UUID(as_uuid=True), ForeignKey("species.id"), nullable=True)
     scene_name = Column(String(255), nullable=False)
     scene_description = Column(Text)  # 场景描述（对文本生成很重要）
-    research_output_type = Column(String(100))  # 科研产出类型
+    research_output_type = Column(String(100))  # 科研产出（成果类型）
+    research_output_data = Column(String(100))  # 科研产出-数据产出
     data_output_type = Column(String(100))  # 数据产出类型
     data_total_tb = Column(Numeric(10, 2))  # 数据总量(TB)
     file_size_description = Column(String(500))  # 文件大小描述
@@ -75,8 +76,8 @@ class Equipment(Base):
     plan_usage_unit = Column(String(20))  # 计划使用单位
     plan_usage_description = Column(Text)  # 计划使用说明
     necessity_description = Column(Text)  # 必要性与匹配性说明
-    purchase_time = Column(DateTime)  # 计划购置时间
-    commissioning_time = Column(DateTime)  # 计划投用时间
+    purchase_time = Column(DateTime)  # 计划购置时间 (stored as date in DB)
+    commissioning_time = Column(DateTime)  # 计划投用时间 (stored as date in DB)
     data_output_type = Column(String(100))  # 数据输出类型
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at = Column(DateTime, server_default=func.now())
@@ -133,7 +134,8 @@ class AIModel(Base):
     function_type = Column(String(50))  # 功能类型：training, inference
     related_data_ids = Column(ARRAY(UUID(as_uuid=True)), default=[])  # 关联数据ID数组
     scene_ids = Column(ARRAY(UUID(as_uuid=True)), default=[])  # 关联场景ID数组
-    estimated_total_fee = Column(Numeric(15, 2), nullable=False)  # 预计总费用（万元）
+    source_equipment_ids = Column(ARRAY(UUID(as_uuid=True)), default=[])  # 关联设备ID数组
+    estimated_total_fee = Column(Numeric(15, 2))  # 预计总费用（万元）
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

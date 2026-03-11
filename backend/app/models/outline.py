@@ -64,7 +64,7 @@ class NodeReference(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     node_id = Column(UUID(as_uuid=True), ForeignKey("outline_nodes.id", ondelete="CASCADE"), nullable=False)
-    ref_type_id = Column(UUID(as_uuid=True), ForeignKey("reference_types.id"), nullable=False)
+    ref_type_id = Column(UUID(as_uuid=True), ForeignKey("reference_types.id"), nullable=True)
     ref_entity_type = Column(String(50), nullable=False)  # scene, equipment, dataset, ai_model, rd_project
     ref_entity_id = Column(UUID(as_uuid=True), nullable=False)  # 关联的实体ID
     reference_note = Column(Text)  # 引用备注

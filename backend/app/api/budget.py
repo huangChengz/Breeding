@@ -68,13 +68,28 @@ async def get_budget_summary(
         float(rd_budget)
     )
 
+    # 转换单位：统一转为元
+    # 设备是元，数据/AI模型/研发项目是万元，需要乘以10000
+    data_processing_budget_yuan = float(data_processing_budget) * 10000 if data_processing_budget else 0
+    data_purchase_budget_yuan = float(data_purchase_budget) * 10000 if data_purchase_budget else 0
+    ai_model_budget_yuan = float(ai_model_budget) * 10000 if ai_model_budget else 0
+    rd_budget_yuan = float(rd_budget) * 10000 if rd_budget else 0
+
+    total_budget_yuan = (
+        float(equipment_budget) +
+        data_processing_budget_yuan +
+        data_purchase_budget_yuan +
+        ai_model_budget_yuan +
+        rd_budget_yuan
+    )
+
     return {
-        "equipment_budget": float(equipment_budget),
-        "data_processing_budget": float(data_processing_budget),
-        "data_purchase_budget": float(data_purchase_budget),
-        "ai_model_budget": float(ai_model_budget),
-        "rd_budget": float(rd_budget),
-        "total_budget": total_budget
+        "equipment_budget": float(equipment_budget) if equipment_budget else 0,
+        "data_processing_budget": data_processing_budget_yuan,
+        "data_purchase_budget": data_purchase_budget_yuan,
+        "ai_model_budget": ai_model_budget_yuan,
+        "rd_budget": rd_budget_yuan,
+        "total_budget": total_budget_yuan
     }
 
 
@@ -102,7 +117,7 @@ async def get_equipment_budget(
             "equipment_type": e.equipment_type,
             "key_level": e.key_level,
             "unit_price": float(e.unit_price) if e.unit_price else 0,
-            "total_price": float(e.total_price),
+            "total_price": float(e.total_price) if e.total_price else 0,
             "supplier": e.supplier,
             "is_imported": e.is_imported,
             "necessity_description": e.necessity_description,
@@ -170,7 +185,7 @@ async def get_ai_model_budget(
             "model_scale": m.model_scale,
             "parameter_count": m.parameter_count,
             "function_type": m.function_type,
-            "estimated_total_fee": float(m.estimated_total_fee),
+            "estimated_total_fee": float(m.estimated_total_fee) if m.estimated_total_fee else 0,
             "model_description": m.model_description
         }
         for m in models
@@ -201,7 +216,7 @@ async def get_rd_project_budget(
             "rd_direction": r.rd_direction,
             "rd_content": r.rd_content,
             "expected_output": r.expected_output,
-            "estimated_fee": float(r.estimated_fee)
+            "estimated_fee": float(r.estimated_fee) if r.estimated_fee else 0
         }
         for r in rd_projects
     ]

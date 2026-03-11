@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(pip install:*)",
+      "Bash(npm install:*)",
+      "Bash(python:*)",
+      "Bash(npx vue-tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(psql:*)",
+      "Bash(where psql:*)",
+      "Bash(PGPASSWORD=hcflytek psql:*)",
+      "Bash(curl:*)",
+      "Bash(npm run:*)",
+      "Bash(netstat:*)",
+      "Bash(done)",
+      "Bash(rm:*)",
+      "Bash(powershell:*)",
+      "Bash(taskkill:*)",
+      "Bash(start:*)",
+      "Bash(tasklist:*)",
+      "Bash(choco install:*)",
+      "Bash(gh:*)",
+      "Bash(refreshenv:*)",
+      "Bash(\"/c/Program Files/GitHub/cli/bin/gh.exe\":*)",
+      "Bash(cmd.exe:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(PGPASSWORD=123456 psql:*)",
+      "Bash(pip show:*)",
+      "Bash(task pythonlist:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}
